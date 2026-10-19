@@ -49,7 +49,7 @@ claw_ready = False
 WRIST_MAX_DEG = None
 
 # 포트, 방향, 이동 범위와 시작 위치를 확인한 기구만 True로 변경.
-LIFT_ENABLED = False
+LIFT_ENABLED = True
 CLAW_ENABLED = True
 WRIST_ENABLED = False
 
