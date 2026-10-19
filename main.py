@@ -16,7 +16,7 @@ for motor in drive_motors:
 # 스틱을 놓아도 조금씩 들어오는 값을 무시해서 저절로 움직이지 않게 함.
 DEADZONE = 5
 # 처음에는 50%로 시작. 위/아래 버튼으로 20~100%까지 조절.
-speed_limit = 50
+speed_limit = 100
 
 # 아직 확인하지 않은 포트. None을 Ports.PORT5 같은 값으로 바꾸기.
 # 주행 포트 1~4와 겹치지 않게 실제 배선을 먼저 확인해야 함.
