@@ -25,10 +25,11 @@ LIFT_PORT_2 = Ports.PORT7
 CLAW_PORT = Ports.PORT5
 WRIST_PORT = None
 
-# FORWARD일 때 리프트 상승 / 집게 닫힘 / 집게 위쪽 회전이 되도록 맞추기.
-# 집게는 측정 당시 설정 유지. REVERSE로 열리며 각도가 감소하는 조건.
-# 리프트 두 모터는 같은 방향 설정을 사용함.
-LIFT_REVERSED = False
+# 측정 때 확인한 도르레 방향을 그대로 사용.
+# 두 모터 모두 각도가 감소하는 REVERSE 방향이 리프트 상승.
+LIFT_LEFT_REVERSED = False
+LIFT_RIGHT_REVERSED = True
+# 집게도 REVERSE로 열리고, FORWARD로 닫힘.
 CLAW_REVERSED = False
 WRIST_REVERSED = False
 
@@ -39,9 +40,12 @@ WRIST_GEARS = GearSetting.RATIO_18_1
 
 # 아래 각도는 기구 자체가 아니라 모터 축이 돌아간 각도.
 # 실제 끝에 닿기 전에 멈추도록 여유를 두고 측정해서 넣기.
-# 리프트와 회전축은 시작 위치를 0도로 잡음.
+# 리프트는 아래쪽 기준에서 A를 눌러 두 모터를 0도로 등록.
 # 집게는 측정 당시 -59도였던 실제 위치에서 X를 눌러 기준 등록.
-LIFT_MAX_DEG = None
+LIFT_LOWER_LIMIT = 0
+LIFT_UPPER_LIMIT = -2600
+# A를 누르기 전에는 양쪽 도르레 모두 조작을 막음.
+lift_ready = False
 CLAW_CLOSED_LIMIT = -59
 CLAW_OPEN_LIMIT = -388
 # 시작할 때는 집게 위치를 모르므로, X로 기준을 확인하기 전까지 조작 금지.
@@ -53,14 +57,15 @@ LIFT_ENABLED = True
 CLAW_ENABLED = True
 WRIST_ENABLED = False
 
-# 처음 조정할 때는 낮은 속도로 시작. 낮은 속도만으로 파손이 방지되지는 않음.
+# 리프트는 사용자가 상승을 확인한 속도/토크 100% 설정.
+# 끝에서 정지 지연이 생길 수 있어 -2600도 한계는 실제 기구에서 검증 필요.
 LIFT_SPEED = 100
 CLAW_SPEED = 40
 WRIST_SPEED = 15
 
 # 막힌 상태에서 과하게 미는 힘을 줄이기 위한 토크 제한.
 # 이 수치가 기어에 안전하다는 보장은 없으므로 기구에 맞춰 확인해야 함.
-LIFT_TORQUE = 80
+LIFT_TORQUE = 100
 CLAW_TORQUE = 15
 WRIST_TORQUE = 20
 
@@ -93,10 +98,12 @@ def create_motors(ports, gears, reversed_direction, torque, stopping):
 
 # 리프트와 회전축은 버튼을 놓으면 현재 위치를 유지하려고 힘을 줌.
 # HOLD도 전원이 꺼지면 무게를 지탱하지 못하므로 기계적 지지가 필요함.
-lift_motors = create_motors(
-    [LIFT_PORT_1, LIFT_PORT_2], LIFT_GEARS,
-    LIFT_REVERSED, LIFT_TORQUE, HOLD
-)
+lift_left = Motor(LIFT_PORT_1, LIFT_GEARS, LIFT_LEFT_REVERSED)
+lift_right = Motor(LIFT_PORT_2, LIFT_GEARS, LIFT_RIGHT_REVERSED)
+lift_motors = [lift_left, lift_right]
+for motor in lift_motors:
+    motor.set_max_torque(LIFT_TORQUE, PERCENT)
+    motor.set_stopping(HOLD)
 # 집게는 일단 BRAKE 사용. 물체를 계속 잡아주는 힘은 보장하지 않음.
 claw_motors = create_motors(
     [CLAW_PORT], CLAW_GEARS, CLAW_REVERSED, CLAW_TORQUE, BRAKE
@@ -114,7 +121,8 @@ def set_reference(motors, enabled, maximum):
             motor.set_position(0, DEGREES)
 
 
-set_reference(lift_motors, LIFT_ENABLED, LIFT_MAX_DEG)
+# 리프트와 집게는 시작 위치를 자동으로 영점 처리하지 않음.
+# 각각 A와 X를 눌러 실제 기준 위치를 확인한 후 등록.
 set_reference(wrist_motors, WRIST_ENABLED, WRIST_MAX_DEG)
 
 
@@ -147,6 +155,58 @@ def show_speed():
     controller.screen.set_cursor(1, 1)
     controller.screen.print("Speed:", speed_limit, "%")
 
+    controller.screen.clear_row(2)
+    controller.screen.set_cursor(2, 1)
+    controller.screen.print("Lift: READY" if lift_ready else "Lift: press A")
+
+    controller.screen.clear_row(3)
+    controller.screen.set_cursor(3, 1)
+    controller.screen.print("Claw: READY" if claw_ready else "Claw: press X")
+
+
+def confirm_lift_reference():
+    global lift_ready
+
+    # 실행할 때마다 한 번만 등록. 움직인 다음 실수로 재등록하는 것을 막음.
+    if lift_ready or not LIFT_ENABLED:
+        return
+    if controller.buttonL1.pressing() or controller.buttonL2.pressing():
+        return
+
+    # 측정할 때 A를 눌렀던 것과 같은 실제 아래쪽 위치에 놓고 등록하기.
+    # 자동으로 내려가지 않으며, 현재 위치를 0도로 기록할 뿐임.
+    for motor in lift_motors:
+        motor.stop()
+        motor.set_position(LIFT_LOWER_LIMIT, DEGREES)
+    lift_ready = True
+    show_speed()
+
+
+def control_lift():
+    if not LIFT_ENABLED or not lift_ready:
+        for motor in lift_motors:
+            motor.stop()
+        return
+
+    up = controller.buttonL2.pressing()
+    down = controller.buttonL1.pressing()
+    output = 0
+
+    if up and not down:
+        # 상승하면 두 각도가 모두 감소함.
+        # 하나라도 -2600도에 닿으면 기구가 기울지 않게 둘 다 멈춤.
+        if all(m.position(DEGREES) > LIFT_UPPER_LIMIT for m in lift_motors):
+            output = -LIFT_SPEED
+    elif down and not up:
+        # 하강하면 각도가 증가함. 하나라도 0도에 닿으면 둘 다 정지.
+        if all(m.position(DEGREES) < LIFT_LOWER_LIMIT for m in lift_motors):
+            output = LIFT_SPEED
+
+    # 양쪽 버튼을 놓거나 같이 눌러도 output은 0이라 HOLD로 정지.
+    # 이 처리는 끝 위치 제한이며, 양쪽 높이를 자동 동기화하는 기능은 아님.
+    for motor in lift_motors:
+        command_motor(motor, output)
+
 def confirm_claw_reference():
     global claw_ready
 
@@ -167,6 +227,7 @@ def confirm_claw_reference():
         motor.set_position(CLAW_CLOSED_LIMIT, DEGREES)
 
     claw_ready = True
+    show_speed()
 
 
 def control_claw():
@@ -206,7 +267,8 @@ def control_claw():
                 motor.stop()
 
 
-# 프로그램을 시작하고 집게 기준 위치를 확인한 뒤 X를 한 번 누르기.
+# 프로그램을 시작할 때마다 도르레는 A, 집게는 X로 기준 등록.
+controller.buttonA.pressed(confirm_lift_reference)
 controller.buttonX.pressed(confirm_claw_reference)
 
 # 최고속도는 고정이므로 위/아래 버튼에 속도 변경 기능을 연결하지 않음.
@@ -230,10 +292,7 @@ while True:
     command_motor(right_rear, right_speed)
 
     # L2 상승 / L1 하강. 버튼을 놓으면 정지.
-    control_limited(
-        lift_motors, LIFT_ENABLED, LIFT_MAX_DEG,
-        controller.buttonL2.pressing(), controller.buttonL1.pressing(), LIFT_SPEED
-    )
+    control_lift()
     
     
     # 집게는 열릴 때 각도가 감소하므로 전용 제한 함수를 사용.
