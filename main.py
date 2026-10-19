@@ -6,8 +6,8 @@ controller = Controller(PRIMARY)
 # 직접 확인한 방향 기준. 왼쪽은 반전, 오른쪽은 기본 방향.
 # 초록색 카트리지를 쓰므로 기어비는 18:1로 맞춤.
 left_front = Motor(Ports.PORT1, GearSetting.RATIO_18_1, True)
-left_rear = Motor(Ports.PORT2, GearSetting.RATIO_18_1, True)
-right_front = Motor(Ports.PORT3, GearSetting.RATIO_18_1, False)
+left_rear = Motor(Ports.PORT3, GearSetting.RATIO_18_1, True)
+right_front = Motor(Ports.PORT2, GearSetting.RATIO_18_1, False)
 right_rear = Motor(Ports.PORT4, GearSetting.RATIO_18_1, False)
 drive_motors = [left_front, left_rear, right_front, right_rear]
 for motor in drive_motors:
@@ -15,17 +15,18 @@ for motor in drive_motors:
 
 # 스틱을 놓아도 조금씩 들어오는 값을 무시해서 저절로 움직이지 않게 함.
 DEADZONE = 5
-# 처음에는 50%로 시작. 위/아래 버튼으로 20~100%까지 조절.
+# 최고속도는 100%로 고정. 스틱을 조금 밀면 그만큼 천천히 움직임.
 speed_limit = 100
 
-# 아직 확인하지 않은 포트. None을 Ports.PORT5 같은 값으로 바꾸기.
-# 주행 포트 1~4와 겹치지 않게 실제 배선을 먼저 확인해야 함.
-LIFT_PORT_1 = None
-LIFT_PORT_2 = None
-CLAW_PORT = None
+# 집게 5번, 리프트 왼쪽 도르레 6번, 오른쪽 도르레 7번.
+# 집게 회전용 별도 모터는 아직 지정하지 않음.
+LIFT_PORT_1 = Ports.PORT6
+LIFT_PORT_2 = Ports.PORT7
+CLAW_PORT = Ports.PORT5
 WRIST_PORT = None
 
-# FORWARD일 때 리프트 상승 / 집게 열림 / 집게 위쪽 회전이 되도록 맞추기.
+# FORWARD일 때 리프트 상승 / 집게 닫힘 / 집게 위쪽 회전이 되도록 맞추기.
+# 집게는 측정 당시 설정 유지. REVERSE로 열리며 각도가 감소하는 조건.
 # 리프트 두 모터는 같은 방향 설정을 사용함.
 LIFT_REVERSED = False
 CLAW_REVERSED = False
@@ -38,7 +39,8 @@ WRIST_GEARS = GearSetting.RATIO_18_1
 
 # 아래 각도는 기구 자체가 아니라 모터 축이 돌아간 각도.
 # 실제 끝에 닿기 전에 멈추도록 여유를 두고 측정해서 넣기.
-# 기준은 리프트 아래 / 집게 닫힘 / 집게 회전 아래쪽을 0도로 잡음.
+# 리프트와 회전축은 시작 위치를 0도로 잡음.
+# 집게는 측정 당시 -59도였던 실제 위치에서 X를 눌러 기준 등록.
 LIFT_MAX_DEG = None
 CLAW_CLOSED_LIMIT = -59
 CLAW_OPEN_LIMIT = -388
@@ -148,10 +150,10 @@ def show_speed():
 def confirm_claw_reference():
     global claw_ready
 
-# 한 번 기준을 등록하면 프로그램을 다시 켜기 전까지 재등록하지 않음.
-# 집게를 벌린 상태에서 실수로 X를 눌러 기준이 바뀌는 것을 방지.
+    # 한 번 기준을 등록하면 프로그램을 다시 켜기 전까지 재등록하지 않음.
+    # 집게를 벌린 상태에서 실수로 X를 눌러 기준이 바뀌는 것을 방지.
     if claw_ready or not CLAW_ENABLED or not claw_motors:
-    return
+        return
     
     # 집게를 움직이는 중에는 기준 위치를 바꾸지 못하게 함.
     if controller.buttonR1.pressing() or controller.buttonR2.pressing():
@@ -207,21 +209,7 @@ def control_claw():
 # 프로그램을 시작하고 집게 기준 위치를 확인한 뒤 X를 한 번 누르기.
 controller.buttonX.pressed(confirm_claw_reference)
 
-def speed_up():
-    global speed_limit
-    speed_limit = min(100, speed_limit + 10)
-    show_speed()
-
-
-def speed_down():
-    global speed_limit
-    speed_limit = max(20, speed_limit - 10)
-    show_speed()
-
-
-# pressed는 버튼을 누르는 순간 한 번 실행. 누르고 있어도 계속 바뀌지 않음.
-controller.buttonUp.pressed(speed_up)
-controller.buttonDown.pressed(speed_down)
+# 최고속도는 고정이므로 위/아래 버튼에 속도 변경 기능을 연결하지 않음.
 show_speed()
 
 while True:
