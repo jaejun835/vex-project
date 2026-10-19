@@ -40,12 +40,15 @@ WRIST_GEARS = GearSetting.RATIO_18_1
 # 실제 끝에 닿기 전에 멈추도록 여유를 두고 측정해서 넣기.
 # 기준은 리프트 아래 / 집게 닫힘 / 집게 회전 아래쪽을 0도로 잡음.
 LIFT_MAX_DEG = None
-CLAW_MAX_DEG = None
+CLAW_CLOSED_LIMIT = -59
+CLAW_OPEN_LIMIT = -388
+# 시작할 때는 집게 위치를 모르므로, X로 기준을 확인하기 전까지 조작 금지.
+claw_ready = False
 WRIST_MAX_DEG = None
 
 # 포트, 방향, 이동 범위와 시작 위치를 확인한 기구만 True로 변경.
 LIFT_ENABLED = False
-CLAW_ENABLED = False
+CLAW_ENABLED = True
 WRIST_ENABLED = False
 
 # 처음 조정할 때는 낮은 속도로 시작. 낮은 속도만으로 파손이 방지되지는 않음.
@@ -143,6 +146,65 @@ def show_speed():
     controller.screen.set_cursor(1, 1)
     controller.screen.print("Speed:", speed_limit, "%")
 
+def confirm_claw_reference():
+    global claw_ready
+
+    if not CLAW_ENABLED or not claw_motors:
+        return
+
+    # 집게를 움직이는 중에는 기준 위치를 바꾸지 못하게 함.
+    if controller.buttonR1.pressing() or controller.buttonR2.pressing():
+        return
+
+    for motor in claw_motors:
+        motor.stop()
+
+        # 측정 당시 -59도였던 실제 위치에 집게를 맞추고 X 누르기.
+        # X는 현재 위치에 이름표를 붙이는 것이라 자동으로 닫아주지는 않음.
+        motor.set_position(CLAW_CLOSED_LIMIT, DEGREES)
+
+    claw_ready = True
+
+
+def control_claw():
+    if not claw_motors:
+        return
+
+    # X로 기준 위치를 등록하기 전에는 집게 조작을 막음.
+    if not CLAW_ENABLED or not claw_ready:
+        for motor in claw_motors:
+            motor.stop()
+        return
+
+    opening = controller.buttonR1.pressing()
+    closing = controller.buttonR2.pressing()
+
+    for motor in claw_motors:
+        position = motor.position(DEGREES)
+
+        # 둘 다 누르거나 둘 다 놓으면 정지.
+        if opening == closing:
+            motor.stop()
+
+        elif opening:
+            # 집게가 열릴수록 각도가 감소함.
+            # -388도에 도달하면 더 벌리지 않고 멈춤.
+            if position > CLAW_OPEN_LIMIT:
+                motor.spin(REVERSE, CLAW_SPEED, PERCENT)
+            else:
+                motor.stop()
+
+        elif closing:
+            # 닫힐수록 각도가 증가함.
+            # -59도에 도달하면 더 닫지 않고 멈춤.
+            if position < CLAW_CLOSED_LIMIT:
+                motor.spin(FORWARD, CLAW_SPEED, PERCENT)
+            else:
+                motor.stop()
+
+
+# 프로그램을 시작하고 집게 기준 위치를 확인한 뒤 X를 한 번 누르기.
+controller.buttonX.pressed(confirm_claw_reference)
 
 def speed_up():
     global speed_limit
@@ -183,16 +245,16 @@ while True:
         lift_motors, LIFT_ENABLED, LIFT_MAX_DEG,
         controller.buttonL2.pressing(), controller.buttonL1.pressing(), LIFT_SPEED
     )
-    # R1 열기 / R2 닫기. 물체에 걸리면 한계 각도 전에도 멈춰야 함.
-    # 자동 끼임 감지는 아직 없으므로 막힌 채 버튼을 계속 누르지 않기.
-    control_limited(
-        claw_motors, CLAW_ENABLED, CLAW_MAX_DEG,
-        controller.buttonR1.pressing(), controller.buttonR2.pressing(), CLAW_SPEED
-    )
+    
+    
+    # 집게는 열릴 때 각도가 감소하므로 전용 제한 함수를 사용.
+    control_claw()
+    
     # 왼쪽 방향키: 위 / 오른쪽 방향키: 아래.
     control_limited(
-        wrist_motors, WRIST_ENABLED, WRIST_MAX_DEG,
-        controller.buttonLeft.pressing(), controller.buttonRight.pressing(),
+       wrist_motors, WRIST_ENABLED, WRIST_MAX_DEG,
+        controller.buttonLeft.pressing(),
+        controller.buttonRight.pressing(),
         WRIST_SPEED
     )
     wait(20, MSEC)
