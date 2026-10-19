@@ -55,7 +55,7 @@ WRIST_ENABLED = False
 
 # 처음 조정할 때는 낮은 속도로 시작. 낮은 속도만으로 파손이 방지되지는 않음.
 LIFT_SPEED = 20
-CLAW_SPEED = 15
+CLAW_SPEED = 40
 WRIST_SPEED = 15
 
 # 막힌 상태에서 과하게 미는 힘을 줄이기 위한 토크 제한.
