@@ -113,7 +113,6 @@ def set_reference(motors, enabled, maximum):
 
 
 set_reference(lift_motors, LIFT_ENABLED, LIFT_MAX_DEG)
-set_reference(claw_motors, CLAW_ENABLED, CLAW_MAX_DEG)
 set_reference(wrist_motors, WRIST_ENABLED, WRIST_MAX_DEG)
 
 
@@ -149,9 +148,11 @@ def show_speed():
 def confirm_claw_reference():
     global claw_ready
 
-    if not CLAW_ENABLED or not claw_motors:
-        return
-
+# 한 번 기준을 등록하면 프로그램을 다시 켜기 전까지 재등록하지 않음.
+# 집게를 벌린 상태에서 실수로 X를 눌러 기준이 바뀌는 것을 방지.
+    if claw_ready or not CLAW_ENABLED or not claw_motors:
+    return
+    
     # 집게를 움직이는 중에는 기준 위치를 바꾸지 못하게 함.
     if controller.buttonR1.pressing() or controller.buttonR2.pressing():
         return
