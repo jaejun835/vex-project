@@ -1,20 +1,61 @@
+#region VEXcode Generated Robot Configuration
+from vex import *
+import urandom
+import math
+
+# 브레인은 기본으로 정의되어 있어야 함
+brain=Brain()
+
+# 로봇 설정 코드
+
+
+# 회전 센서 초기화가 끝날 때까지 기다림
+wait(30, MSEC)
+
+
+# 실행할 때마다 난수 시작값이 달라지도록 설정
+def initializeRandomSeed():
+    wait(100, MSEC)
+    random = brain.battery.voltage(MV) + brain.battery.current(CurrentUnits.AMP) * 100 + brain.timer.system_high_res()
+    urandom.seed(int(random))
+      
+# 난수 시작값 설정 
+initializeRandomSeed()
+
+
+def play_vexcode_sound(sound_name):
+    # VEXcode에서 V5 소리를 쉽게 재생하도록 돕고
+    # 어떤 동작인지 분명하게 보여주는 보조 함수.
+    print("VEXPlaySound:" + sound_name)
+    wait(5, MSEC)
+
+# REPL 머리글 중간에 출력하지 않도록 잠깐 기다림
+wait(200, MSEC)
+# 콘솔에 남은 REPL 표시를 지움
+print("\033[2J")
+
+#endregion VEXcode Generated Robot Configuration
 from vex import *
 
 brain = Brain()
 controller = Controller(PRIMARY)
 
-# 직접 확인한 방향 기준으로 왼쪽은 반전, 오른쪽은 기본 방향
+# X-drive는 일단 왼쪽 반전과 오른쪽 기본 방향으로 설정
+# 장착 후 낮은 속도로 바퀴별 방향을 확인하기, 현재 방향은 임시 설정
 # 초록색 카트리지를 쓰므로 기어비는 18:1로 맞춤
 left_front = Motor(Ports.PORT1, GearSetting.RATIO_18_1, True)
 left_rear = Motor(Ports.PORT3, GearSetting.RATIO_18_1, True)
 right_front = Motor(Ports.PORT2, GearSetting.RATIO_18_1, False)
 right_rear = Motor(Ports.PORT4, GearSetting.RATIO_18_1, False)
 drive_motors = [left_front, left_rear, right_front, right_rear]
-for motor in drive_motors:
-    motor.set_stopping(BRAKE)
+DRIVE_TORQUE = 100
 
-# 스틱을 놓아도 조금씩 들어오는 값을 무시해서 저절로 움직이지 않게 함.
-DEADZONE = 5
+for motor in drive_motors:
+    motor.set_stopping(HOLD)
+    motor.set_max_torque(DRIVE_TORQUE, PERCENT)
+
+# 데드존이 0이라 작은 입력도 그대로 통과함.
+DEADZONE = 0
 # 최고속도는 100%로 고정
 speed_limit = 100
 
@@ -33,7 +74,7 @@ LIFT_RIGHT_REVERSED = True
 CLAW_REVERSED = False
 WRIST_REVERSED = False
 
-# 추가 모터도 일단 초록색 기준으로 실제 카트리지가 다르면 수정하기
+# 리프트는 빨간색 카트리지 사용, 집게와 회전축은 실제 카트리지를 확인하고 변경하기
 LIFT_GEARS = GearSetting.RATIO_36_1
 CLAW_GEARS = GearSetting.RATIO_18_1 ########################### !!확실하지 않아서 점검 필요!! #################################
 WRIST_GEARS = GearSetting.RATIO_18_1
@@ -41,7 +82,7 @@ WRIST_GEARS = GearSetting.RATIO_18_1
 # 리프트는 아래쪽 기준에서 A를 눌러 두 모터를 0영점으로 등록
 # 집게는 측정 당시 -59도였던 실제 위치에서 X를 눌러 기준 등록 ########################## 다시 측정 및 검토 필요 ################################
 LIFT_LOWER_LIMIT = 0
-LIFT_UPPER_LIMIT = -2600
+LIFT_UPPER_LIMIT = -1400
 # A를 누르기 전에는 양쪽 도르레 모두 조작을 막음
 lift_ready = False
 CLAW_CLOSED_LIMIT = -59
@@ -56,7 +97,7 @@ CLAW_ENABLED = True
 WRIST_ENABLED = False
 
 # 리프트는 사용자가 상승을 확인한 속도/토크 100% 설정
-# 끝에서 정지 지연이 생길 수 있어 -2600도 한계는 실제 기구에서 검증 필요
+# 끝에서 정지 지연이 생길 수 있어 -1400도 한계는 실제 기구에서 검증 필요
 LIFT_SPEED = 100
 CLAW_SPEED = 40
 WRIST_SPEED = 15
@@ -64,7 +105,7 @@ WRIST_SPEED = 15
 # 막힌 상태에서 과하게 미는 힘을 줄이기 위한 토크 제한
 # 이 수치가 기어에 안전하다는 보장은 없으므로 기구에 맞춰 확인해야 함
 LIFT_TORQUE = 100
-CLAW_TORQUE = 15
+CLAW_TORQUE = 30
 WRIST_TORQUE = 20
 
 
@@ -187,12 +228,12 @@ def control_lift():
         return
 
     up = controller.buttonL2.pressing()
-    down = controller.buttonL1.pressing()
+    down = controller.buttonL1.pressing()    
     output = 0
 
     if up and not down:
         # 상승하면 두 각도가 모두 감소함
-        # 하나라도 -2600도에 닿으면 기구가 기울지 않게 둘 다 멈춤
+        # 하나라도 -1400도에 닿으면 기구가 기울지 않게 둘 다 멈춤
         if all(m.position(DEGREES) > LIFT_UPPER_LIMIT for m in lift_motors):
             output = -LIFT_SPEED
     elif down and not up:
@@ -273,21 +314,36 @@ controller.buttonX.pressed(confirm_claw_reference)
 show_speed()
 
 while True:
-    # 왼쪽 상하: 전진/후진, 오른쪽 좌우: 회전
+    # 왼쪽 스틱은 전진/후진과 옆 이동, 오른쪽 스틱 좌우는 회전
     forward = apply_deadzone(controller.axis3.position())
-    turn = apply_deadzone(controller.axis1.position())
-    left_speed = forward + turn
-    right_speed = forward - turn
+    strafe = apply_deadzone(controller.axis4.position())
+    turn = -apply_deadzone(controller.axis1.position())
 
-    # 전진과 회전을 더하면 100을 넘을 수 있어 양쪽을 같은 비율로 줄임
-    # 마지막에 최고속도를 적용하므로 회전할 때도 설정값을 넘지 않음
-    largest = max(abs(left_speed), abs(right_speed), 100)
-    left_speed = left_speed / largest * speed_limit
-    right_speed = right_speed / largest * speed_limit
-    command_motor(left_front, left_speed)
-    command_motor(left_rear, left_speed)
-    command_motor(right_front, right_speed)
-    command_motor(right_rear, right_speed)
+    # 조금 밀면 섬세하게 움직이고, 끝까지 밀면 원래 최대 입력
+    forward = forward * abs(forward) / 100
+    strafe = strafe * abs(strafe) / 100
+    turn = turn * abs(turn) / 100
+
+    # 옴니휠을 45도로 장착한 일반적인 X-drive 배치를 기준으로 계산
+    # 회전 입력이 0이면 양수 strafe에서 왼쪽 앞과 오른쪽 뒤를 정방향으로 구동
+    front_left_speed = forward + strafe + turn
+    front_right_speed = forward - strafe - turn
+    rear_left_speed = forward - strafe + turn
+    rear_right_speed = forward + strafe - turn
+
+    # 입력을 합쳐도 최고속도를 넘지 않게 네 바퀴를 같은 비율로 줄임
+    largest = max(
+        abs(front_left_speed), abs(front_right_speed),
+        abs(rear_left_speed), abs(rear_right_speed), 100
+    )
+    front_left_speed = front_left_speed / largest * speed_limit
+    front_right_speed = front_right_speed / largest * speed_limit
+    rear_left_speed = rear_left_speed / largest * speed_limit
+    rear_right_speed = rear_right_speed / largest * speed_limit
+    command_motor(left_front, front_left_speed)
+    command_motor(right_front, front_right_speed)
+    command_motor(left_rear, rear_left_speed)
+    command_motor(right_rear, rear_right_speed)
 
     # L2 상승 / L1 하강. 버튼을 놓으면 정지
     control_lift()
